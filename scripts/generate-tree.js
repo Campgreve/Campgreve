@@ -17,9 +17,14 @@ const path = require('path');
 const CONTRIB_FILE = path.join(__dirname, 'contributions.json');
 const OUT_DIR = path.join(__dirname, '..', 'assets');
 
-const WIDTH = 500;
-const HEIGHT = 500;
-const TRUNK_BASE = { x: 250, y: 480 };
+const WIDTH = 480;
+const HEIGHT = 300;
+// Il tronco parte in basso a sinistra e cresce in diagonale verso destra
+// (albero compatto in stile "bonsai da profilo", non centrato).
+const TRUNK_BASE = { x: 55, y: 275 };
+const TRUNK_ANGLE = -1.15; // radianti: leggermente inclinato verso destra
+const TRUNK_LENGTH = 46;
+const TRUNK_DEPTH = 7;
 
 // ---------------------------------------------------------------------
 // 1. Scheletro dell'albero (tronco + rami) generato con un piccolo
@@ -50,18 +55,18 @@ function grow(x, y, angle, length, depth, branches, leafSlots) {
   // i rami intermedi più sottili possono ospitare foglie anche loro
   if (depth <= 3) leafSlots.push({ x: x2, y: y2, depth });
 
-  const nBranches = depth > 5 ? 2 : rand() > 0.35 ? 2 : 1;
+  const nBranches = depth > 4 ? 2 : rand() > 0.2 ? 2 : 1;
   for (let i = 0; i < nBranches; i++) {
-    const spread = 0.35 + rand() * 0.4;
+    const spread = 0.28 + rand() * 0.3;
     const newAngle = angle + (i === 0 ? -spread : spread) * (0.6 + rand() * 0.5);
-    const newLength = length * (0.68 + rand() * 0.15);
+    const newLength = length * (0.68 + rand() * 0.12);
     grow(x2, y2, newAngle, newLength, depth - 1, branches, leafSlots);
   }
 }
 
 const branches = [];
 const leafSlots = [];
-grow(TRUNK_BASE.x, TRUNK_BASE.y, -Math.PI / 2, 90, 8, branches, leafSlots);
+grow(TRUNK_BASE.x, TRUNK_BASE.y, TRUNK_ANGLE, TRUNK_LENGTH, TRUNK_DEPTH, branches, leafSlots);
 
 // depth 0 = punte esterne dei rami. Vogliamo che i commit più recenti
 // finiscano lì, quindi ordiniamo dal tronco (depth alto) verso le punte.
@@ -113,20 +118,29 @@ function levelFromCount(c) {
 //    superano gli slot disponibili, si "impilano" con un leggero offset
 //    così l'albero diventa via via più folto invece di rompersi.
 // ---------------------------------------------------------------------
+// Ogni slot ospita un piccolo blocco di quadratini (mini griglia), non un
+// solo elemento: così le foglie restano fitte e ravvicinate come le celle
+// della contribution graph, invece di sparpagliarsi.
+const CELL = 6; // dimensione del quadratino
+const GAP = 1; // spazio tra un quadratino e l'altro
+const CLUSTER_COLS = 4; // quanti quadratini per riga dentro ogni slot
+
 function buildLeaves(colors) {
   const leaves = [];
   const n = leafSlots.length;
   activeDays.forEach((day, i) => {
     const slot = leafSlots[i % n];
     const stack = Math.floor(i / n);
-    const jitterX = (rand() - 0.5) * 6 + stack * 2.2;
-    const jitterY = (rand() - 0.5) * 6 - stack * 2.2;
+    const posInCluster = stack % (CLUSTER_COLS * CLUSTER_COLS);
+    const col = posInCluster % CLUSTER_COLS;
+    const row = Math.floor(posInCluster / CLUSTER_COLS);
+    const offsetX = (col - (CLUSTER_COLS - 1) / 2) * (CELL + GAP);
+    const offsetY = (row - (CLUSTER_COLS - 1) / 2) * (CELL + GAP);
     const level = levelFromCount(day.count);
-    const size = 4.5 + level * 1.3;
     leaves.push({
-      x: slot.x + jitterX,
-      y: slot.y + jitterY,
-      r: size,
+      x: slot.x + offsetX,
+      y: slot.y + offsetY,
+      size: CELL,
       color: colors[level],
       delay: (rand() * 4).toFixed(2),
       recent: i > activeDays.length - 15,
@@ -137,7 +151,8 @@ function buildLeaves(colors) {
 
 function svgLeaf(leaf) {
   const swayClass = leaf.recent ? 'leaf-sway-strong' : 'leaf-sway';
-  return `<circle class="${swayClass}" cx="${leaf.x.toFixed(1)}" cy="${leaf.y.toFixed(1)}" r="${leaf.r.toFixed(1)}" fill="${leaf.color}" style="animation-delay:${leaf.delay}s" />`;
+  const half = leaf.size / 2;
+  return `<rect class="${swayClass}" x="${(leaf.x - half).toFixed(1)}" y="${(leaf.y - half).toFixed(1)}" width="${leaf.size}" height="${leaf.size}" rx="1.5" fill="${leaf.color}" style="animation-delay:${leaf.delay}s" />`;
 }
 
 function svgBranches() {
@@ -167,14 +182,14 @@ function buildSVG({ mode, colors }) {
     .leaf-sway { animation: sway 4s ease-in-out infinite; transform-origin: center; }
     .leaf-sway-strong { animation: swayStrong 2.6s ease-in-out infinite; transform-origin: center; }
   </style>
-  <ellipse cx="250" cy="482" rx="70" ry="10" fill="${trunkColor}" opacity="0.15" />
+  <ellipse cx="${TRUNK_BASE.x}" cy="${TRUNK_BASE.y + 3}" rx="26" ry="6" fill="${trunkColor}" opacity="0.15" />
   <g>
     ${svgBranches()}
   </g>
   <g>
     ${leaves.map(svgLeaf).join('\n    ')}
   </g>
-  <text x="250" y="498" text-anchor="middle" font-size="11" fill="${trunkColor}" opacity="0.6">${activeDays.length} contributi \u00b7 ${leaves.length} foglie</text>
+  <text x="${WIDTH - 10}" y="${HEIGHT - 8}" text-anchor="end" font-size="10" fill="${trunkColor}" opacity="0.55">${activeDays.length} contributi \u00b7 ${leaves.length} foglie</text>
 </svg>`;
 }
 
